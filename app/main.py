@@ -39,16 +39,17 @@ def health() -> dict[str, str]:
 @app.post("/v1/chat")
 def chat(request: ChatRequest) -> dict[str, object]:
     message_data = [message.model_dump() for message in request.messages]
-    request_id = request.request_id or str(uuid4())
-    policy = canary.policy(request_id)
+    request_key = request.request_id or str(uuid4())
+    policy = canary.policy(request_key)
     decision = choose_route(message_data, policy.threshold)
     try:
         reply, route, attempted = gateway.chat(clients(), decision.route, message_data)
     except ProviderError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
+    event_id = str(uuid4())
     cost = metrics.record(
         Event(
-            request_id=request_id,
+            request_id=event_id,
             policy=policy.name,
             intended_route=decision.route,
             executed_route=route,
@@ -59,7 +60,7 @@ def chat(request: ChatRequest) -> dict[str, object]:
         )
     )
     return {
-        "request_id": request_id,
+        "request_id": event_id,
         "content": reply.content,
         "route": route,
         "fallback": route != decision.route,

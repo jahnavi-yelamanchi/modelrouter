@@ -52,7 +52,7 @@ Endpoints:
 Example evaluation after generating both responses for the same prompt:
 
 ```sh
-curl -X POST http://localhost:8080/v1/evaluations/demo-simple \
+curl -X POST http://localhost:8080/v1/evaluations/<request_id-from-chat-response> \
   -H 'content-type: application/json' \
   -d '{"local_score":0.8,"remote_score":0.9}'
 ```
