@@ -2,8 +2,12 @@ services:
   router:
     build: .
     env_file: .env
+    environment:
+      METRICS_DB: /data/router.db
     ports:
       - "8080:8080"
+    volumes:
+      - router-data:/data
   ollama:
     image: ollama/ollama:latest
     profiles: ["local"]
@@ -12,3 +16,4 @@ services:
 
 volumes:
   ollama:
+  router-data:
