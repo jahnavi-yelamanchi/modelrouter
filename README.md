@@ -1,37 +1,62 @@
 # Model Router
 
-A Dockerized, cost-aware LLM gateway. It routes low-risk requests to a small local Ollama model and escalates complex or uncertain requests to a stronger API model. There is no web UI.
+> A Dockerized LLM gateway that routes each request to the lowest-cost model likely to meet its quality bar.
 
-## What is different here
+**Built for:** teams that need lower LLM spend without making routing decisions opaque or irreversible.
 
-Most routing demos stop at a classifier. This project treats routing as an auditable online decision:
+- Routes simple requests to a local Ollama model and escalates complex or uncertain work to a stronger API model.
+- Recovers from provider failures with fallback and per-provider circuit breakers.
+- Audits route choice, delivery cost, remote-baseline savings, and independently measured quality deltas.
+- Tests new routing thresholds through a deterministic canary with an evidence-based rollback guardrail.
 
-\[
-\text{route}(x)=\begin{cases}
-\text{remote}, & \hat r(x)\ge\tau\\
-\text{local}, & \hat r(x)<\tau
-\end{cases}
-\]
+## Architecture
 
-`\hat r(x)` combines transparent complexity and uncertainty features. The response reports the decision, and the gateway records its actual provider choice, fallback, delivery cost, and remote-baseline saving. New thresholds enter through a deterministic canary; the candidate shuts off after sufficiently many independently scored examples show a configured quality regression.
+```mermaid
+flowchart LR
+    client["Client application"] --> gateway["FastAPI gateway<br/>Dockerized HTTP API"]
+    gateway --> router["Risk-aware router<br/>intent • complexity • uncertainty"]
+    canary["Canary policy<br/>stable traffic split • rollback guardrail"] -. "candidate threshold" .-> router
+    router --> executor["Provider executor<br/>fallback • circuit breaker"]
+    executor --> local["Local route<br/>Ollama small model"]
+    executor --> remote["Remote route<br/>OpenAI-compatible API"]
+    gateway --> metrics["SQLite audit store<br/>cost • savings • quality evidence"]
+    executor --> metrics
+    metrics --> canary
+```
 
-This is an **engineering contribution**, not a claim of a new routing theorem. It operationalizes three research ideas:
+## Why it stands out
 
-- [FrugalGPT](https://arxiv.org/abs/2305.05176) establishes that cascades can reduce LLM inference cost while retaining quality.
-- [RouteLLM](https://arxiv.org/abs/2406.18665) learns strong-versus-weak routing from preference data. Here, the deliberately small, interpretable policy makes the decision and its rollout observable for a Docker deployment.
-- [Conformal Risk Control](https://arxiv.org/abs/2208.02814) motivates calibrating the escalation threshold on held-out labeled requests. This repository exposes the needed paired-quality data and canary guardrail; it does **not** claim distribution-free guarantees until `τ` is calibrated on exchangeable held-out data.
+Model Router is an operational layer, not a chat wrapper. The decision policy is intentionally interpretable: escalate when estimated quality risk crosses a threshold; otherwise use the local route. Every request exposes the route rationale and records what actually happened.
 
-The honest novelty sentence for a presentation is: **“Model Router couples an interpretable risk gate with cost accounting, failure recovery, and evidence-gated canary rollout, so routing policy changes are measurable and reversible rather than static.”**
+The design builds on LLM cascade and router research, then adds the deployment controls needed to run such a policy safely:
 
-## Metrics and scientific limits
+- [FrugalGPT](https://arxiv.org/abs/2305.05176): cost-efficient LLM cascades.
+- [RouteLLM](https://arxiv.org/abs/2406.18665): learned strong-versus-weak model routing.
+- [Conformal Risk Control](https://arxiv.org/abs/2208.02814): motivates calibrating the escalation threshold on held-out data.
 
-- `cost_used_usd` is the executed provider cost using token counts and the rates in `.env`.
-- `cost_saved_usd` is the remote-baseline cost for the same observed token counts minus actual delivery cost.
-- `quality_delta_remote_minus_local` is the mean of independently recorded paired scores. Positive means remote scored higher.
-- Local cost defaults to zero and excludes hardware/energy depreciation. Set its rates if that matters.
-- Quality delta remains `null` until both answers are evaluated. The gateway refuses to pretend a routing confidence score is a measured quality score.
+The research claim is bounded: this implementation provides the data and rollout guardrails needed for calibration, but does not claim a formal risk guarantee until the threshold is calibrated on suitable held-out requests.
 
-## Run
+## Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| Gateway | Python + FastAPI | Validated HTTP API and route explanations |
+| Local inference | Ollama | Low-cost local model for straightforward work |
+| Remote inference | OpenAI-compatible API | Higher-capability fallback for difficult work |
+| Resilience | Circuit breaker + fallback | Keeps requests flowing through provider failures |
+| Evidence | SQLite | Request-level cost, savings, route, and quality records |
+| Deployment | Docker Compose | One-command local deployment |
+
+## Evidence and metrics
+
+- `cost_used_usd`: actual executed-provider cost from token counts and configured rates.
+- `cost_saved_usd`: remote-model baseline for the same observed token counts minus actual delivery cost.
+- `quality_delta_remote_minus_local`: average independently scored paired comparison. Positive means the remote answer scored higher.
+- `canary_requests` and `fallbacks`: operational health of routing-policy changes and providers.
+
+Local cost defaults to zero and excludes hardware or energy depreciation. Quality remains `null` until paired answers are evaluated; the router does not pass off a confidence estimate as measured quality.
+
+## Quick start
 
 ```sh
 cp .env.example .env
@@ -41,9 +66,9 @@ docker compose exec ollama ollama pull qwen2.5:1.5b
 ./scripts/demo.sh
 ```
 
-`REMOTE_BASE_URL` is OpenAI-compatible, so the stronger model can be any compatible paid API. The local route uses Ollama's compatible endpoint.
+Set `REMOTE_API_KEY`, `REMOTE_MODEL`, and your provider's current input/output rates in `.env`. `REMOTE_BASE_URL` is OpenAI-compatible, so the stronger model can be any compatible paid API.
 
-Endpoints:
+## API
 
 - `POST /v1/chat` routes a chat request and returns route evidence and request cost.
 - `GET /v1/metrics` returns cost used/saved, fallbacks, canary traffic, and measured quality delta.
@@ -58,13 +83,6 @@ curl -X POST http://localhost:8080/v1/evaluations/<request_id-from-chat-response
   -H 'content-type: application/json' \
   -d '{"local_score":0.8,"remote_score":0.9}'
 ```
-
-## Demo capture
-
-1. Start the containers and run `./scripts/demo.sh` in a full-screen terminal.
-2. Run `curl -sS http://localhost:8080/v1/metrics` once more after a few requests. Use this as the screenshot: it visibly proves route decisions, spend, savings, and canary state without a website.
-3. Record a 60–90 second terminal session with macOS **Shift-Command-5**. State the simple/complex routing decision, show a forced provider outage for fallback if desired, then finish on `/v1/metrics`.
-4. For a picture/video of you, use your webcam alongside that terminal recording. I cannot truthfully fabricate your likeness without a reference image.
 
 ## Checks
 
