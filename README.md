@@ -9,6 +9,10 @@
 - Audits route choice, delivery cost, remote-baseline savings, and independently measured quality deltas.
 - Tests new routing thresholds through a deterministic canary with an evidence-based rollback guardrail.
 
+![Deployed Model Router topology](docs/router-deployment.png)
+
+*Deployed flow: client traffic enters the gateway, the router selects a local or remote model, and metrics feed health and canary decisions back into the policy.*
+
 ## Architecture
 
 ```mermaid
@@ -35,6 +39,16 @@ The design builds on LLM cascade and router research, then adds the deployment c
 - [Conformal Risk Control](https://arxiv.org/abs/2208.02814): motivates calibrating the escalation threshold on held-out data.
 
 The research claim is bounded: this implementation provides the data and rollout guardrails needed for calibration, but does not claim a formal risk guarantee until the threshold is calibrated on suitable held-out requests.
+
+## Canary model design
+
+The control policy escalates at a quality-risk threshold of `0.45`. A candidate policy starts at `0.55`, making it deliberately more cost-seeking: requests with estimated risk between `0.45` and `0.55` stay local under the candidate but escalate under control.
+
+1. **Stable exposure:** `CANARY_PERCENT` defaults to `5`; a SHA-256 hash of the request key assigns traffic consistently to control or candidate.
+2. **Measured comparison:** paired local/remote evaluations provide the quality labels. The store scores each policy using the answer that route actually served.
+3. **Automatic guardrail:** after `CANARY_MIN_EVALUATIONS` (default `20`) candidate evaluations, the candidate stops receiving traffic if its average quality is more than `CANARY_MAX_QUALITY_REGRESSION` (default `0.03`) below control.
+
+This makes a routing-rule change reversible and evidence-driven instead of a global threshold edit.
 
 ## Stack
 
