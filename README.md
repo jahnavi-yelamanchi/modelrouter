@@ -9,10 +9,6 @@
 - Audits route choice, delivery cost, remote-baseline savings, and independently measured quality deltas.
 - Tests new routing thresholds through a deterministic canary with an evidence-based rollback guardrail.
 
-![Deployed Model Router topology](docs/router-deployment.png)
-
-*Deployed flow: client traffic enters the gateway, the router selects a local or remote model, and metrics feed health and canary decisions back into the policy.*
-
 ## Architecture
 
 ```mermaid
