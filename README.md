@@ -49,6 +49,8 @@ Endpoints:
 - `GET /v1/metrics` returns cost used/saved, fallbacks, canary traffic, and measured quality delta.
 - `POST /v1/evaluations/{request_id}` accepts independent `local_score` and `remote_score` values in `[0,1]` for paired evaluation.
 
+For a paired benchmark comparison, send the same prompt twice with `"force_route":"local"` and `"force_route":"remote"`. This is only for collecting evaluation evidence; omit it during normal routing.
+
 Example evaluation after generating both responses for the same prompt:
 
 ```sh

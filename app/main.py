@@ -24,6 +24,7 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[Message] = Field(min_length=1)
     request_id: str | None = None
+    force_route: Literal["local", "remote"] | None = None
 
 
 class Evaluation(BaseModel):
@@ -43,7 +44,7 @@ def chat(request: ChatRequest) -> dict[str, object]:
     policy = canary.policy(request_key)
     decision = choose_route(message_data, policy.threshold)
     try:
-        reply, route, attempted = gateway.chat(clients(), decision.route, message_data)
+        reply, route, attempted = gateway.chat(clients(), request.force_route or decision.route, message_data)
     except ProviderError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
     event_id = str(uuid4())
@@ -64,6 +65,7 @@ def chat(request: ChatRequest) -> dict[str, object]:
         "content": reply.content,
         "route": route,
         "fallback": route != decision.route,
+        "force_route": request.force_route,
         "policy": policy.name,
         "attempted": attempted,
         "decision": {
