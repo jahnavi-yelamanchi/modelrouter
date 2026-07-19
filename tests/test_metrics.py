@@ -12,7 +12,7 @@ class MetricsTest(unittest.TestCase):
             os.environ["REMOTE_INPUT_PER_MILLION"] = "1000000"
             try:
                 metrics = Metrics(f"{directory}/metrics.db")
-                cost = metrics.record(Event("one", "local", "local", False, 0.1, 3, 0))
+                cost = metrics.record(Event("one", "control", "local", "local", False, 0.1, 3, 0))
                 self.assertEqual(cost, {"used": 0.0, "saved": 3.0})
                 self.assertEqual(metrics.summary()["cost_saved_usd"], 3.0)
             finally:

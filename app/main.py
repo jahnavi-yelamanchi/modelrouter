@@ -4,6 +4,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from app.canary import Canary
 from app.metrics import Event, Metrics
 from app.providers import ProviderError, clients
 from app.reliability import Gateway
@@ -12,6 +13,7 @@ from app.router import choose_route
 app = FastAPI(title="Model Router")
 gateway = Gateway()
 metrics = Metrics()
+canary = Canary(metrics)
 
 
 class Message(BaseModel):
@@ -21,6 +23,7 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[Message] = Field(min_length=1)
+    request_id: str | None = None
 
 
 class Evaluation(BaseModel):
@@ -36,15 +39,17 @@ def health() -> dict[str, str]:
 @app.post("/v1/chat")
 def chat(request: ChatRequest) -> dict[str, object]:
     message_data = [message.model_dump() for message in request.messages]
-    decision = choose_route(message_data)
+    request_id = request.request_id or str(uuid4())
+    policy = canary.policy(request_id)
+    decision = choose_route(message_data, policy.threshold)
     try:
         reply, route, attempted = gateway.chat(clients(), decision.route, message_data)
     except ProviderError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
-    request_id = str(uuid4())
     cost = metrics.record(
         Event(
             request_id=request_id,
+            policy=policy.name,
             intended_route=decision.route,
             executed_route=route,
             fallback=route != decision.route,
@@ -58,6 +63,7 @@ def chat(request: ChatRequest) -> dict[str, object]:
         "content": reply.content,
         "route": route,
         "fallback": route != decision.route,
+        "policy": policy.name,
         "attempted": attempted,
         "decision": {
             "intent": decision.intent,
