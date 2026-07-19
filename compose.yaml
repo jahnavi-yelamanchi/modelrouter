@@ -1,7 +1,9 @@
 services:
   router:
     build: .
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     environment:
       METRICS_DB: /data/router.db
     ports:
