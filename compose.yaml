@@ -4,3 +4,11 @@ services:
     env_file: .env
     ports:
       - "8080:8080"
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["local"]
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  ollama:
