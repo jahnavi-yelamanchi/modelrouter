@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from app.providers import ProviderError, clients
+from app.router import choose_route
 
 app = FastAPI(title="Model Router")
 
@@ -15,7 +16,6 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[Message] = Field(min_length=1)
-    route: Literal["local", "remote"] = "remote"
 
 
 @app.get("/health")
@@ -25,14 +25,23 @@ def health() -> dict[str, str]:
 
 @app.post("/v1/chat")
 def chat(request: ChatRequest) -> dict[str, object]:
-    client = clients()[request.route]
+    message_data = [message.model_dump() for message in request.messages]
+    decision = choose_route(message_data)
+    client = clients()[decision.route]
     try:
-        reply = client.chat([message.model_dump() for message in request.messages])
+        reply = client.chat(message_data)
     except ProviderError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
     return {
         "content": reply.content,
-        "route": request.route,
+        "route": decision.route,
+        "decision": {
+            "intent": decision.intent,
+            "complexity": decision.complexity,
+            "uncertainty": decision.uncertainty,
+            "quality_risk": decision.quality_risk,
+            "reason": decision.reason,
+        },
         "usage": {
             "prompt_tokens": reply.prompt_tokens,
             "completion_tokens": reply.completion_tokens,
